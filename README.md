@@ -1,10 +1,20 @@
-# SysWatch
+<p align="center">
+  <img src="docs/icon-ok.png" width="128" alt="SysWatch icon">
+</p>
+
+<h1 align="center">SysWatch</h1>
 
 A quiet machine monitor for Windows: a **status LED for the [YASB](https://github.com/amnweb/yasb) bar** plus **notifications that don't get in your way**. It tells you when you're pushing the machine too hard (RAM, CPU, temperature, disk space, battery) and which program is responsible.
 
 <p align="center">
   <img src="docs/bar.png" alt="SysWatch LED in the YASB bar" width="520">
 </p>
+
+The icon's LED follows the same colors as the widget:
+
+| OK | Warning | Critical |
+|:---:|:---:|:---:|
+| <img src="docs/icon-ok.png" width="64"> | <img src="docs/icon-warning.png" width="64"> | <img src="docs/icon-critical.png" width="64"> |
 
 - 🟢 **green**: all good · 🟠 **amber**: something is high · 🔴 **red**: critical · ⚪ gray: monitor not running · hollow ring (○): alerts muted
 - The number next to the LED is the CPU temperature (or the CPU load if the temperature isn't readable).
@@ -48,6 +58,16 @@ Add this to the `widgets:` section of `~/.config/yasb/config.yaml` (also in [`ya
 
 Left click mutes alerts, middle click opens Task Manager, right click switches to a one-line summary. The widget starts the background monitor by itself when needed, so there's nothing else to install or autostart.
 
+**Compatibility:** tested with YASB 2.0.8. SysWatch uses only the documented options of YASB's [Custom widget](https://github.com/amnweb/yasb/wiki/(Widget)-Custom): `exec_options` with `return_format: json`, `{data[...]}` placeholders, a `class_name` for styling and the `exec` callback. It does **not** modify YASB. As the wiki recommends, quote `run_cmd` if the path contains spaces, e.g. `'"C:\Program Files\SysWatch\SysWatch.exe" --widget'`.
+
+Optional styling, so the widget highlights on hover like the built-in ones, in `styles.css`:
+
+```css
+.sysmon:hover { background-color: var(--yasb-white-alpha-08); }
+```
+
+> YASB has no catalog for third-party widgets: its theme gallery ([yasb-themes](https://github.com/amnweb/yasb-themes)) is for complete themes (`config.yaml` + `styles.css`) and its core repository only accepts widgets written into YASB itself. SysWatch is therefore published here as a standalone project. If you use it in a theme, mention the requirement ("needs SysWatch.exe") in that theme's *Requirements* field.
+
 ## Configuration
 
 `%LOCALAPPDATA%\SysWatch\config.json` is created on first run and is picked up without restarting:
@@ -77,13 +97,22 @@ SysWatch.exe --autostart on   (optional) start with Windows, without YASB
 
 The interface follows the Windows language (English, Italian).
 
+## Download
+
+Grab `SysWatch.exe` (or the zip, which also contains the YASB snippet) from the [latest release](https://github.com/robertobissanti/sys-watch/releases/latest) and point the widget's `run_cmd` to it. Each release lists the SHA-256 checksums of its files.
+
+The executable isn't code-signed, so Windows SmartScreen may show *"Windows protected your PC"* the first time. Click **More info → Run anyway**, or build it yourself (below).
+
 ## Build
 
 Nothing to install: it uses the C# compiler that ships with Windows (.NET Framework 4.x).
 
 ```powershell
-.\build.ps1      # creates bin\SysWatch.exe
+.\build.ps1             # creates bin\SysWatch.exe
+.\build.ps1 -Package    # also creates dist\SysWatch-<version>.zip and SHA256SUMS.txt
 ```
+
+> If YASB is running, its widget restarts the monitor every few seconds and the exe can be locked. Stop the monitor right before building (`SysWatch.exe --stop`), or temporarily remove the widget.
 
 ## How it works
 

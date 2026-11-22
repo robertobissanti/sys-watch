@@ -12,6 +12,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -47,6 +49,12 @@ static class Program
                 return 0;
             case "--autostart":
                 Autostart.Set(args.Length > 1 && args[1] == "on"); return 0;
+            case "--ico":        // build helper: writes the application icon
+                if (args.Length > 1) IconArt.WriteIco(args[1]);
+                return 0;
+            case "--render":     // build helper: writes PNG previews of the icon
+                if (args.Length > 1) IconArt.RenderPreviews(args[1]);
+                return 0;
             default:
                 return Daemon.Run();
         }
@@ -529,6 +537,140 @@ static class Daemon
                 body = T.S("Plug in the charger.", "Collega il caricatore.");
                 break;
         }
+    }
+}
+
+// ---------------------------------------------------------------- icon artwork
+// A dark rounded tile with a heartbeat line and a glowing status LED.
+static class IconArt
+{
+    public static readonly Color Green = Color.FromArgb(34, 197, 94);
+    public static readonly Color Amber = Color.FromArgb(245, 158, 11);
+    public static readonly Color Red = Color.FromArgb(239, 68, 68);
+
+    public static Bitmap Draw(int size, Color led)
+    {
+        var bmp = new Bitmap(size, size);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            g.Clear(Color.Transparent);
+            float s = size;
+
+            // tile
+            var r = new RectangleF(0, 0, s - 1, s - 1);
+            using (var tile = Round(r, s * 0.22f))
+            {
+                using (var br = new LinearGradientBrush(r, Color.FromArgb(58, 64, 80), Color.FromArgb(20, 22, 28), 90f))
+                    g.FillPath(br, tile);
+                using (var pen = new Pen(Color.FromArgb(110, 118, 135), Math.Max(1f, s / 28f)))
+                    g.DrawPath(pen, tile);
+            }
+
+            // heartbeat line
+            float pw = Math.Max(1.6f, s * 0.085f);
+            using (var pen = new Pen(Color.FromArgb(235, 238, 245), pw))
+            {
+                pen.StartCap = LineCap.Round; pen.EndCap = LineCap.Round; pen.LineJoin = LineJoin.Round;
+                float y = s * 0.62f;
+                g.DrawLines(pen, new[] {
+                    new PointF(s * 0.12f, y),
+                    new PointF(s * 0.32f, y),
+                    new PointF(s * 0.41f, s * 0.80f),
+                    new PointF(s * 0.54f, s * 0.34f),
+                    new PointF(s * 0.63f, y),
+                    new PointF(s * 0.88f, y) });
+            }
+
+            // LED, top-right, with a soft glow
+            float d = s * 0.34f;
+            var ledRect = new RectangleF(s * 0.60f, s * 0.07f, d, d);
+            float gl = d * 0.55f;
+            var glowRect = new RectangleF(ledRect.X - gl, ledRect.Y - gl, d + 2 * gl, d + 2 * gl);
+            using (var gp = new GraphicsPath())
+            {
+                gp.AddEllipse(glowRect);
+                using (var gb = new PathGradientBrush(gp))
+                {
+                    gb.CenterColor = Color.FromArgb(140, led);
+                    gb.SurroundColors = new[] { Color.FromArgb(0, led) };
+                    var oldClip = g.Clip;
+                    g.SetClip(r);
+                    g.FillEllipse(gb, glowRect);
+                    g.Clip = oldClip;
+                }
+            }
+            using (var gp = new GraphicsPath())
+            {
+                gp.AddEllipse(ledRect);
+                using (var br = new PathGradientBrush(gp))
+                {
+                    br.CenterPoint = new PointF(ledRect.X + d * 0.38f, ledRect.Y + d * 0.35f);
+                    br.CenterColor = Lighten(led, 0.65f);
+                    br.SurroundColors = new[] { led };
+                    g.FillEllipse(br, ledRect);
+                }
+            }
+            using (var pen = new Pen(Color.FromArgb(15, 15, 18), Math.Max(1f, s / 32f)))
+                g.DrawEllipse(pen, ledRect);
+        }
+        return bmp;
+    }
+
+    static GraphicsPath Round(RectangleF r, float rad)
+    {
+        float d = rad * 2;
+        var p = new GraphicsPath();
+        p.AddArc(r.X, r.Y, d, d, 180, 90);
+        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
+    }
+
+    static Color Lighten(Color c, float k)
+    {
+        return Color.FromArgb(c.R + (int)((255 - c.R) * k), c.G + (int)((255 - c.G) * k), c.B + (int)((255 - c.B) * k));
+    }
+
+    // Multi-size .ico with PNG-compressed entries (Windows Vista and later)
+    public static void WriteIco(string path)
+    {
+        int[] sizes = { 16, 24, 32, 48, 64, 256 };
+        var images = new List<byte[]>();
+        foreach (int sz in sizes)
+            using (var b = Draw(sz, Green))
+            using (var ms = new MemoryStream())
+            {
+                b.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                images.Add(ms.ToArray());
+            }
+        using (var w = new BinaryWriter(File.Create(path)))
+        {
+            w.Write((ushort)0); w.Write((ushort)1); w.Write((ushort)sizes.Length);
+            int offset = 6 + 16 * sizes.Length;
+            for (int i = 0; i < sizes.Length; i++)
+            {
+                byte dim = (byte)(sizes[i] >= 256 ? 0 : sizes[i]);
+                w.Write(dim); w.Write(dim); w.Write((byte)0); w.Write((byte)0);
+                w.Write((ushort)1); w.Write((ushort)32);
+                w.Write((uint)images[i].Length); w.Write((uint)offset);
+                offset += images[i].Length;
+            }
+            foreach (var img in images) w.Write(img);
+        }
+    }
+
+    public static void RenderPreviews(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        string[] names = { "ok", "warning", "critical" };
+        Color[] cols = { Green, Amber, Red };
+        for (int i = 0; i < 3; i++)
+            using (var b = Draw(256, cols[i])) b.Save(Path.Combine(dir, "icon-" + names[i] + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+        using (var b = Draw(256, Green)) b.Save(Path.Combine(dir, "icon.png"), System.Drawing.Imaging.ImageFormat.Png);
     }
 }
 

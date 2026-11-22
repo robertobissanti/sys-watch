@@ -1,0 +1,20 @@
+# Add under `widgets:` in ~/.config/yasb/config.yaml, then add `sysmon` to a bar's widget list.
+# Replace C:\path\to with the folder that contains SysWatch.exe.
+  sysmon:
+    type: yasb.custom.CustomWidget
+    options:
+      label: "{data[html]}"
+      label_alt: "{data[html_alt]}"
+      class_name: sysmon
+      tooltip: true
+      tooltip_label: "{data[tip]}"
+      exec_options:
+        run_cmd: 'C:\path\to\SysWatch.exe --widget'
+        run_interval: 5000
+        return_format: json
+        use_shell: false
+        encoding: utf-8
+      callbacks:
+        on_left: 'exec C:\path\to\SysWatch.exe --toggle-snooze'
+        on_middle: 'exec taskmgr.exe'
+        on_right: toggle_label
